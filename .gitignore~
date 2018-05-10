@@ -30,5 +30,8 @@
 # Point cloud files
 *.pcd
 
-# Floder
-build
+# Image files
+*.png
+*.jpg
+*.jpeg
+*.bmp

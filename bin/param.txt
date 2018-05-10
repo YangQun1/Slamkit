@@ -1,0 +1,20 @@
+# camera
+camera.cx=325.5;
+camera.cy=253.5;
+camera.fx=518.0;
+camera.fy=519.0;
+camera.skew=0.0
+camera.factor=1000.0;
+
+# feature detection
+detector_name=ORB
+is_show_feature_detection=false
+
+# feature match
+matcher_name=BF
+good_match_threshold=6.0
+is_show_feature_match=false
+
+# point cloud
+is_show_point_cloud=true
+is_save_point_cloud=false
