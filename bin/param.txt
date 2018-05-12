@@ -1,3 +1,10 @@
+# image data
+rgb_dir=/home/yangqun/SLAM/DataSet/RGBD_VO_DATA/rgb_png/
+depth_dir=/home/yangqun/SLAM/DataSet/RGBD_VO_DATA/depth_png/
+extension=.png
+start_index=400
+end_index=460
+
 # camera
 camera.cx=325.5;
 camera.cy=253.5;
@@ -12,9 +19,14 @@ is_show_feature_detection=false
 
 # feature match
 matcher_name=BF
-good_match_threshold=6.0
+good_match_threshold=10.0
 is_show_feature_match=false
+min_good_matches=8
+min_inliers=5
+max_norm=0.3
 
 # point cloud
 is_show_point_cloud=true
 is_save_point_cloud=false
+is_filter=true
+voxel_grid=0.02
