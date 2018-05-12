@@ -29,6 +29,9 @@ AlignImage::AlignImage(PinHoleCamera *cam, ParameterReader *param_reader)
 	matcher_name_ = param_reader->getParam<string>("matcher_name");
 	good_match_threshold_ = param_reader->getParam<double>("good_match_threshold");
 	is_show_ = param_reader->getParam<bool>("is_show_feature_match");
+	min_good_matches_ = param_reader->getParam<int>("min_good_matches");
+	min_inliers_ = param_reader->getParam<int>("min_inliers");
+	max_norm_ = param_reader->getParam<double>("max_norm");
 	
 	T_ = Eigen::Isometry3d::Identity();
 	
@@ -50,10 +53,16 @@ AlignImage::~AlignImage()
 
 
 // 求解PnP,求解出两帧图像之间的位姿变换关系
-void AlignImage:: alignImage(Frame& frame1, Frame& frame2)
+void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
 {
+	is_good_align_ = true;
+	
+	// 清空之前的匹配数据,防止不同帧对之间的数据累积
+	matches_.clear();
+	good_matches_.clear();
+	
 	// 匹配两帧的描述子
-	matcher_->match(frame1.descrip, frame2.descrip, matches_);
+	matcher_->match(ref_frame->descrip_, curr_frame->descrip_, matches_);
 	cout << "find total " << matches_.size() << " matches" << endl;
 	
 	// 根据距离,筛选好的匹配
@@ -63,15 +72,23 @@ void AlignImage:: alignImage(Frame& frame1, Frame& frame2)
 		if (m.distance < min_dist)
 			min_dist = m.distance;
 	}
+	cout << "min_dist: " << min_dist << endl;
+	
 	// 筛选
+	if (min_dist < 10 ) min_dist = 10;		// 防止因为min_dist等于0而找不到good_match的情况
 	for (cv::DMatch  m : matches_) {
 		if (m.distance < good_match_threshold_ * min_dist)
 			good_matches_.push_back(m);
 	}
 	cout << "good matches: " << good_matches_.size() << endl;
+	if (good_matches_.size() < min_good_matches_) {
+		is_good_align_ = false;
+		return;
+	}
+	
 	if (is_show_) {
 		cv::Mat imgMatches;
-		cv::drawMatches(frame1.rgbImg_, frame1.keypoints, frame2.rgbImg_ , frame2.keypoints, good_matches_, imgMatches);
+		cv::drawMatches(ref_frame->rgb_img_, ref_frame->keypoints_, curr_frame->rgb_img_ , curr_frame->keypoints_, good_matches_, imgMatches);
 		cv::imshow("good matches", imgMatches);
 		cv::waitKey(0);
 	}
@@ -84,10 +101,9 @@ void AlignImage:: alignImage(Frame& frame1, Frame& frame2)
 	// 获得对应的三维点和像素点坐标
 	for (cv::DMatch m : good_matches_) {
 		// 获取第一帧图像中点的像素坐标和深度
-		cv::Point2f p = frame1.keypoints[m.queryIdx].pt;
-		ushort d = frame1.depthImg_.ptr<ushort>(int(p.y))[int(p.x)];
-		if (d == 0)
-			continue;
+		cv::Point2f p = ref_frame->keypoints_[m.queryIdx].pt;
+		ushort d = ref_frame->depth_img_.ptr<ushort>(int(p.y))[int(p.x)];
+		if (d == 0) continue;
 		
 		// 得到第一帧图像中空间点坐标
 		cv::Point3f pt_2d_with_depth(p.x, p.y, d);
@@ -95,18 +111,32 @@ void AlignImage:: alignImage(Frame& frame1, Frame& frame2)
 		points_obj.push_back(pt_obj);
 		
 		// 得到与之对应的第二帧图像中像素点坐标
-		cv::Point2f pt_img = frame2.keypoints[m.trainIdx].pt;
+		cv::Point2f pt_img = curr_frame->keypoints_[m.trainIdx].pt;
 		points_img.push_back(pt_img);
+	}
+	
+	// 检查有效的目标点的数量,小于4则会引发opencv异常,需要放弃该帧
+	if (points_obj.size() < 4) {
+		is_good_align_ = false;
+		return;
 	}
 	
 	// 求解PnP问题,同时使用RANSAC去除outlier
 	cv::Mat intrisic_matrix = cv::Mat_<double>::ones(3, 3);
 	cv::Mat rvec, tvec, inliers;
 	cv::eigen2cv(cam_->K(), intrisic_matrix);
+	// solvePnPRansac函数输出的是三维点坐标系(模型坐标系)到二维点坐标系(相机坐标系)的变换关系
+	// 在这里,就是fram1坐标系中的点左乘得到的变换关系,可以变换到curr_frame坐标系中
 	cv::solvePnPRansac(points_obj, points_img, intrisic_matrix, cv::Mat(), rvec, tvec, false, 100, 1.0, 0.99, inliers);
+	// cv::solvePnPRansac(points_obj, points_img, intrisic_matrix, cv::Mat(), rvec, tvec, false, 100, 5.0, 0.90, inliers);
 	cout<<"inliers: "<<inliers.rows<<endl;
 	cout<<"rvec="<<rvec<<endl;
 	cout<<"tvec="<<tvec<<endl;
+	if (inliers.rows < min_inliers_ || normOfTransform(rvec, tvec) > max_norm_){
+		is_good_align_ = false;
+		return;
+	}
+	
 	if (is_show_) {
 		// 画出inliers匹配 
 		vector< cv::DMatch > matchesShow;
@@ -114,7 +144,7 @@ void AlignImage:: alignImage(Frame& frame1, Frame& frame2)
 		for (size_t i=0; i<inliers.rows; i++) {
 			matchesShow.push_back( good_matches_[inliers.ptr<int>(i)[0]] );    
 		}
-		cv::drawMatches(frame1.rgbImg_, frame1.keypoints, frame2.rgbImg_, frame2.keypoints, matchesShow, imgMatches);
+		cv::drawMatches(ref_frame->rgb_img_, ref_frame->keypoints_, curr_frame->rgb_img_, curr_frame->keypoints_, matchesShow, imgMatches);
 		cv::imshow( "inlier matches", imgMatches );
 		cv::waitKey( 0 );
 	}
@@ -134,18 +164,26 @@ void AlignImage:: alignImage(Frame& frame1, Frame& frame2)
 	T_.pretranslate (t_ );
 	cout << "Eigen T:" << endl << T_.matrix() << endl;
 	// 构造Sophus变换关系
-	Sophus::SE3 T_f_r(R_, t_);
-	T_f_r_ = T_f_r;
-	cout << "Sophus T:" << endl << T_f_r_ << endl;
+	Sophus::SE3 T_r2c(R_, t_);
+	T_r2c_ = T_r2c;
+	cout << "Sophus T:" << endl << T_r2c_ << endl;
 	
-	// 计算当前帧与世界坐标之间的变换
-	frame2.T_f_w_ = T_f_r_ * frame1.T_f_w_;
-	
+	// 计算当前帧到世界坐标的变换
+	/******************************************************************
+	 * 注意,这个地方之所以是右乘 T_r2c_ 的逆,是因为从当前帧坐标系变到世界坐标系的
+	 * 过程等价于先变到前一帧的坐标系,再变到前前帧的坐标系,以此类推,用公式表示
+	 * 就是Pw=Tw1^-1 * T12^-1 * T23^-1 * ...* Tn-1n^-1 * Pn,因此相应的变换矩阵就是
+	 * 从第一帧到世界坐标系的变换开始不断的右乘参考帧到当前帧变换的逆
+	 ******************************************************************/
+	curr_frame->T_c2w_ = ref_frame->T_c2w_ * T_r2c_.inverse();
 	
 	return;
 }
 
-
+double AlignImage::normOfTransform(cv::Mat rvec, cv::Mat tvec)
+{
+	return fabs(min(cv::norm(rvec), 2*M_PI-cv::norm(rvec)))+ fabs(cv::norm(tvec));
+}
 
 
 

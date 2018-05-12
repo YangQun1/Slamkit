@@ -38,14 +38,22 @@ private:
 	Eigen::Vector3d t_;		// 两帧之间的平移向量
 	Eigen::Isometry3d T_;	// 两帧之间的变换关系
 	
-	Sophus::SE3 T_f_r_;		// 两帧之间的变换关系,李群表示
+	Sophus::SE3 T_r2c_;		// ref_frame到curr_frame的变换关系,李群表示
 	
+	// 与配准质量有关的变量
+	int min_good_matches_;		// 最少优良匹配匹配点数量
+	int min_inliers_;				// 最小符合pnp约束的内点数量
+	double max_norm_;			// 两帧之间允许的最大运动量
+	
+	bool is_good_align_;			// 指示是否匹配良好
+	
+	double normOfTransform(cv::Mat rvec, cv::Mat tvec);
 public:
 	AlignImage(PinHoleCamera *cam, ParameterReader *param_reader);
 	~AlignImage();
 	
-	void alignImage(Frame& frame1, Frame& frame2);
-	
+	void alignImage(FramePtr ref_frame, FramePtr curr_frame);
+	bool checkAlignQuality(){ return is_good_align_; }
 };
 
 #endif
