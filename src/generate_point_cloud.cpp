@@ -27,32 +27,49 @@ using namespace std;
 
 
 PointCloudGenerator::PointCloudGenerator(PinHoleCamera* cam, ParameterReader *param_reader)
+// viewer_("viewer")	// 初始化点云显示窗口的名字
 {
 	cam_ = cam;
 	is_show_ = param_reader->getParam<bool>("is_show_point_cloud");
 	is_save_ = param_reader->getParam<bool>("is_save_point_cloud");
+	grid_size_ = param_reader->getParam<double>("voxel_grid");
+	is_filter_ = param_reader->getParam<bool>("is_filter");
+	
+	if (is_filter_) {
+		voxel_.setLeafSize(grid_size_, grid_size_, grid_size_);
+	}
+	
+	cloud_out_.reset(new PointCloud);
+	
+	if (is_show_) {
+		viewer_ = new pcl::visualization::CloudViewer("viewer");
+	}
+	else {
+		viewer_ = nullptr;
+	}
 }
 
 PointCloudGenerator::~PointCloudGenerator()
 {
-
+	if (nullptr != viewer_) 
+		delete viewer_;
 }
 
 
-PointCloud::Ptr PointCloudGenerator::generatePointCloud(Frame& frame)
+PointCloud::Ptr PointCloudGenerator::generatePointCloud(FramePtr frame)
 {
     // 点云变量
     // 使用智能指针，创建一个空点云。这种指针用完会自动释放。
     PointCloud::Ptr cloud ( new PointCloud );
     // 遍历深度图
-    for (int m = 0; m <  frame.depthImg_.rows; m++)
-        for (int n=0; n < frame.depthImg_.cols; n++)
+    for (int m = 0; m <  frame->depth_img_.rows; m++)
+        for (int n=0; n < frame->depth_img_.cols; n++)
         {
             // 获取深度图中(m,n)处的值
-            ushort d = frame.depthImg_.ptr<ushort>(m)[n];
+            ushort d = frame->depth_img_.ptr<ushort>(m)[n];
             // d 可能没有值，若如此，跳过此点
             if (d == 0)
-                continue;
+		continue;
             // d 存在值，则向点云增加一个点
             PointT p;
 
@@ -63,9 +80,9 @@ PointCloud::Ptr PointCloudGenerator::generatePointCloud(Frame& frame)
             
             // 从rgb图像中获取它的颜色
             // rgb是三通道的BGR格式图，所以按下面的顺序获取颜色
-            p.b = frame.rgbImg_.ptr<uchar>(m)[n*3];
-            p.g = frame.rgbImg_.ptr<uchar>(m)[n*3+1];
-            p.r = frame.rgbImg_.ptr<uchar>(m)[n*3+2];
+            p.b = frame->rgb_img_.ptr<uchar>(m)[n*3];
+            p.g = frame->rgb_img_.ptr<uchar>(m)[n*3+1];
+            p.r = frame->rgb_img_.ptr<uchar>(m)[n*3+2];
 
             // 把p加入到点云中
             cloud->points.push_back( p );
@@ -77,9 +94,14 @@ PointCloud::Ptr PointCloudGenerator::generatePointCloud(Frame& frame)
 	// cout<<"point cloud size = "<<cloud->points.size()<<endl;
 	cloud->is_dense = false;
 	
-// 	if (is_save) {
+// 	if (is_save_) {
 // 		pcl::io::savePCDFile( "../data/pointcloud.pcd", *cloud );
 // 		cout<<"Point cloud saved."<<endl;
+// 	}
+	
+// 	if (is_show_) {
+// 		viewer_->showCloud(cloud);
+// 		// while ( ! viewer_->wasStopped()) { }
 // 	}
 	
 	// 清除数据并退出
@@ -88,38 +110,50 @@ PointCloud::Ptr PointCloudGenerator::generatePointCloud(Frame& frame)
 	return cloud;
 }
 
-int PointCloudGenerator::joinPointCloud(Frame& frame1, Frame& frame2)
+int PointCloudGenerator::joinPointCloud(FramePtr frame)
 {
 	// 转换成点云
-	PointCloud::Ptr cloud1 = generatePointCloud(frame1);
-	PointCloud::Ptr cloud2 = generatePointCloud(frame2);
+	PointCloud::Ptr curr_cloud = generatePointCloud(frame);
 	
 	// 合并点云
-	PointCloud::Ptr cloud_out(new PointCloud);
-	Sophus::SE3 T_w_f = frame2.T_f_w_.inverse();			// 帧坐标系到世界坐标系的变换关系
-	Eigen::Matrix3d rotation_matrix = T_w_f.rotation_matrix();
-	Eigen::Vector3d translation_vector = T_w_f.translation();
+	PointCloud::Ptr cloud_temp(new PointCloud);
+	Eigen::Matrix3d rotation_matrix = frame->T_c2w_.rotation_matrix();
+	Eigen::Vector3d translation_vector = frame->T_c2w_.translation();
 	Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
 	T.rotate(rotation_matrix);
 	T.pretranslate(translation_vector);
-	pcl::transformPointCloud(*cloud2, *cloud_out, T.matrix());
-	*cloud_out += *cloud1;
+	pcl::transformPointCloud(*curr_cloud, *cloud_temp, T.matrix());		// 将当前点云变换到世界坐标系下
+	*cloud_temp += *cloud_out_;									// 在世界坐标系下将已有点云和当前帧点云进行拼接
+	cloud_out_->clear();											// 清空旧的世界点云数据
 	
-	// 保存成pcd文件
-	if (is_save_) {
-		pcl::io::savePCDFile("../data/joinPointCloud.pcd", *cloud_out);
+	if (is_filter_) {
+		// 拼接之后的点云进行体素滤波降采样
+		voxel_.setInputCloud(cloud_temp);
+		voxel_.filter(*cloud_out_);
 	}
+	else {
+		cloud_out_ = cloud_temp;
+	}
+	
 	
 	// 可视化
 	if (is_show_) {
-		pcl::visualization::CloudViewer viewer("viewer");
-		viewer.showCloud(cloud_out);
-		while ( ! viewer.wasStopped()) { }
+		viewer_->showCloud(cloud_out_);
+		// while ( ! viewer.wasStopped()) { }
 	}
 	
 	return 0;
 }
 
+int PointCloudGenerator::savePointCloud()
+{
+	// 保存成pcd文件
+	if (is_save_) {
+		pcl::io::savePCDFile("../data/joinPointCloud.pcd", *cloud_out_);
+	}
+	
+	return 0;
+}
 
 
 
