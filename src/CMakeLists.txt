@@ -4,7 +4,7 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeModules)
 
 # 查找依赖的库
 find_package(OpenCV 3 REQUIRED)
-find_package(PCL REQUIRED COMPONENTS common io visualization)
+find_package(PCL REQUIRED COMPONENTS common io visualization filters)
 find_package(Eigen REQUIRED)
 find_package(Sophus REQUIRED)
 
@@ -20,7 +20,9 @@ list (APPEND SOURCEFILES
 		pinhole_camera.cpp
 		detect_features.cpp
 		align_image.cpp
-		param_reader.cpp)
+		param_reader.cpp
+		frame.cpp
+		image_reader.cpp)
 
 # 生成共享库文件并链接第三方库
 add_library(SlamKit SHARED  
