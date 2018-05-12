@@ -33,7 +33,7 @@ public:
 	DetectFeatures(ParameterReader *param_reader);
 	~DetectFeatures();
 	
-	void detectFeaturePoints(Frame &frame);
+	void detectFeaturePoints(FramePtr frame);
 };
 
 #endif

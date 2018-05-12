@@ -25,7 +25,7 @@ DetectFeatures::DetectFeatures(ParameterReader *param_reader)
 	is_show_ = param_reader->getParam<bool>("is_show_feature_detection");
 	
 	if (detector_name_ == "ORB") {
-		feature_detector_ = cv::ORB::create(1000);
+		feature_detector_ = cv::ORB::create(500);
 	}
 	else {
 		cout << "invalid detector_name" << endl;
@@ -36,12 +36,12 @@ DetectFeatures::~DetectFeatures()
 {
 }
 
-void DetectFeatures::detectFeaturePoints(Frame &frame)
+void DetectFeatures::detectFeaturePoints(FramePtr frame)
 {
-	cv::Mat &rgb = frame.rgbImg_;
-	cv::Mat &depth = frame.depthImg_;
-	vector<cv::KeyPoint> &keypoints = frame.keypoints;
-	cv::Mat &descrip = frame.descrip;
+	cv::Mat &rgb = frame->rgb_img_;
+	cv::Mat &depth = frame->depth_img_;
+	vector<cv::KeyPoint> &keypoints = frame->keypoints_;
+	cv::Mat &descrip = frame->descrip_;
 	
 	// 提取特征点,包括关键点和描述子
 	feature_detector_->detectAndCompute(rgb, cv::Mat(), keypoints, descrip);
