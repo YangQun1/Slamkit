@@ -11,13 +11,15 @@
 
 #include "frame.h"
 
-// Frame::Frame(cv::Mat& rgb, cv::Mat& depth)
-// {
-// 	rgbImg_ = rgb;
-// 	depthImg_ = depth;
-// }
-// 
-// Frame::~Frame()
-// {
-// 
-// }
+Frame::Frame(PinHoleCamera* cam, const cv::Mat& rgb_img, const cv::Mat& depth_img)
+{
+	cam_ = cam;
+	rgb_img_ = rgb_img;
+	depth_img_ = depth_img;
+}
+
+Frame::~Frame()
+{
+
+}
+
