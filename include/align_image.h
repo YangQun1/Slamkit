@@ -48,6 +48,11 @@ private:
 	bool is_good_align_;			// 指示是否匹配良好
 	
 	double normOfTransform(cv::Mat rvec, cv::Mat tvec);
+	void optimizePoseOfPnp(vector<cv::Point3f>& points_obj,  
+									vector<cv::Point2f>& points_img, 
+									cv::Mat inliers,  
+									cv::Mat& rvec,  
+									cv::Mat& tvec);
 public:
 	AlignImage(PinHoleCamera *cam, ParameterReader *param_reader);
 	~AlignImage();

@@ -157,6 +157,27 @@ void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
 		cv::waitKey( 0 );
 	}
 	
+	optimizePoseOfPnp(points_obj, points_img, inliers, rvec, tvec);
+	
+	// 计算当前帧到世界坐标的变换
+	/******************************************************************
+	 * 注意,这个地方之所以是右乘 T_r2c_ 的逆,是因为从当前帧坐标系变到世界坐标系的
+	 * 过程等价于先变到前一帧的坐标系,再变到前前帧的坐标系,以此类推,用公式表示
+	 * 就是Pw=Tw1^-1 * T12^-1 * T23^-1 * ...* Tn-1n^-1 * Pn,因此相应的变换矩阵就是
+	 * 从第一帧到世界坐标系的变换开始不断的右乘参考帧到当前帧变换的逆
+	 ******************************************************************/
+	curr_frame->T_c2w_ = ref_frame->T_c2w_ * T_r2c_.inverse();
+	
+	return;
+}
+
+double AlignImage::normOfTransform(cv::Mat rvec, cv::Mat tvec)
+{
+	return fabs(min(cv::norm(rvec), 2*M_PI-cv::norm(rvec)))+ fabs(cv::norm(tvec));
+}
+
+void AlignImage::optimizePoseOfPnp(vector<cv::Point3f>& points_obj,  vector<cv::Point2f>& points_img, cv::Mat inliers,  cv::Mat& rvec,  cv::Mat& tvec)
+{
 	// 使用g2o对求解出来的变换关系进行优化
 	typedef g2o::BlockSolver<g2o::BlockSolverTraits< Eigen::Dynamic, Eigen::Dynamic >> MyBlockSolver;
 	typedef g2o::LinearSolverDense<MyBlockSolver::PoseMatrixType> MyLinerSolver;
@@ -201,23 +222,8 @@ void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
 	T_.pretranslate (t_ );
 	cout << "优化后的T_r2c_:" << endl <<  T_r2c_.matrix() << endl;
 	
-	// 计算当前帧到世界坐标的变换
-	/******************************************************************
-	 * 注意,这个地方之所以是右乘 T_r2c_ 的逆,是因为从当前帧坐标系变到世界坐标系的
-	 * 过程等价于先变到前一帧的坐标系,再变到前前帧的坐标系,以此类推,用公式表示
-	 * 就是Pw=Tw1^-1 * T12^-1 * T23^-1 * ...* Tn-1n^-1 * Pn,因此相应的变换矩阵就是
-	 * 从第一帧到世界坐标系的变换开始不断的右乘参考帧到当前帧变换的逆
-	 ******************************************************************/
-	curr_frame->T_c2w_ = ref_frame->T_c2w_ * T_r2c_.inverse();
-	
 	return;
 }
-
-double AlignImage::normOfTransform(cv::Mat rvec, cv::Mat tvec)
-{
-	return fabs(min(cv::norm(rvec), 2*M_PI-cv::norm(rvec)))+ fabs(cv::norm(tvec));
-}
-
 
 
 
