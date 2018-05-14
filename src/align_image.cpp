@@ -7,19 +7,28 @@
 
 #include <Eigen/Eigen>
 #include <Eigen/Geometry>
-
+#include <sophus/se3.h>
+#include <sophus/so3.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/eigen.hpp>	// opencv自带的与eigen类型转换api
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 
+#include <g2o/core/base_unary_edge.h>
+#include <g2o/types/sba/types_six_dof_expmap.h>
+#include <g2o/core/block_solver.h>
+// #include <g2o/core/robust_kernel.h>
+// #include <g2o/core/robust_kernel_impl.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
+#include <g2o/solvers/dense/linear_solver_dense.h>
 
 #include "pinhole_camera.h"
 #include "frame.h"
 #include "detect_features.h"
 #include "align_image.h"
 #include "param_reader.h"
+#include "g2o_types_costom.h"
 
 using namespace std;
 
@@ -106,8 +115,8 @@ void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
 		if (d == 0) continue;
 		
 		// 得到第一帧图像中空间点坐标
-		cv::Point3f pt_2d_with_depth(p.x, p.y, d);
-		cv::Point3f pt_obj = cam_->point2dTo3d(pt_2d_with_depth);
+		Eigen::Vector3d pt_temp = cam_->pixel2camera(Eigen::Vector2d(p.x, p.y), (double)d);
+		cv::Point3f pt_obj( pt_temp(0,0), pt_temp(1,0), pt_temp(2,0) );
 		points_obj.push_back(pt_obj);
 		
 		// 得到与之对应的第二帧图像中像素点坐标
@@ -128,7 +137,6 @@ void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
 	// solvePnPRansac函数输出的是三维点坐标系(模型坐标系)到二维点坐标系(相机坐标系)的变换关系
 	// 在这里,就是fram1坐标系中的点左乘得到的变换关系,可以变换到curr_frame坐标系中
 	cv::solvePnPRansac(points_obj, points_img, intrisic_matrix, cv::Mat(), rvec, tvec, false, 100, 1.0, 0.99, inliers);
-	// cv::solvePnPRansac(points_obj, points_img, intrisic_matrix, cv::Mat(), rvec, tvec, false, 100, 5.0, 0.90, inliers);
 	cout<<"inliers: "<<inliers.rows<<endl;
 	cout<<"rvec="<<rvec<<endl;
 	cout<<"tvec="<<tvec<<endl;
@@ -149,24 +157,49 @@ void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
 		cv::waitKey( 0 );
 	}
 	
-	// 将rvec和tvec转成Eigen的数据类型
-	cv::Mat R;
-	cv::Rodrigues(rvec, R);
-	cout << "OpenCV R:"<<endl << R << endl;
-	cv::cv2eigen(R, R_);
-	cout << "Eigen R:" << endl << R_.matrix() << endl;
-	t_(0) = tvec.at<double>(0,0);
-	t_(1) = tvec.at<double>(0,1);
-	t_(2) = tvec.at<double>(0,2);
-	// 构造Eigen变换关系
-	Eigen::AngleAxisd angle(R_);
-	T_.rotate ( angle ); 
+	// 使用g2o对求解出来的变换关系进行优化
+	typedef g2o::BlockSolver<g2o::BlockSolverTraits< Eigen::Dynamic, Eigen::Dynamic >> MyBlockSolver;
+	typedef g2o::LinearSolverDense<MyBlockSolver::PoseMatrixType> MyLinerSolver;
+	g2o::OptimizationAlgorithmLevenberg *opt_alg = new g2o::OptimizationAlgorithmLevenberg(
+													g2o::make_unique<MyBlockSolver>(
+														g2o::make_unique<MyLinerSolver>() ) );
+	g2o::SparseOptimizer optimizer;
+	optimizer.setAlgorithm(opt_alg);
+	
+	// 使用PnP输出构建待优化的SE3变量
+	Sophus::SE3 T_r2c_no_opt(
+		Sophus::SO3(rvec.at<double>(0,0), rvec.at<double>(1,0), rvec.at<double>(2,0)),
+		Eigen::Vector3d(tvec.at<double>(0,0), tvec.at<double>(1,0), tvec.at<double>(2,0)) );
+	cout << "优化前的T_r2c_:" << endl <<  T_r2c_no_opt.matrix() << endl;
+	
+	// 添加待优化节点
+	g2o::VertexSE3Expmap *pose = new g2o::VertexSE3Expmap;
+	pose->setId(0);
+	pose->setEstimate( g2o::SE3Quat( T_r2c_no_opt.rotation_matrix(), T_r2c_no_opt.translation() ) );
+	optimizer.addVertex( pose );
+	// 添加边,每一条边表示一次三维点到图像点的投影测量,能计算到一个误差
+	for (int i = 0; i < inliers.rows; i++) {
+		int index = inliers.at<int>(i,0);	// 第i个内点在原来的点列表中的索引
+		EdgeProjectXYZ2UVUPoseOnly *edge = new EdgeProjectXYZ2UVUPoseOnly;
+		edge->setId(i);
+		edge->setVertex(0, pose);
+		edge->cam_ = cam_;
+		edge->point_ = Eigen::Vector3d(points_obj[index].x, points_obj[index].y, points_obj[index].z);
+		edge->setMeasurement(Eigen::Vector2d(points_img[index].x, points_img[index].y));
+		edge->setInformation(Eigen::Matrix2d::Identity());	// 信息矩阵是协方差矩阵的逆,表示的是对误差向量中不同分量的重视程度(权重),最简单的即设置为单位阵
+		optimizer.addEdge( edge );
+	}
+	// 启动优化
+	optimizer.initializeOptimization();
+	optimizer.optimize(10);
+	
+	// 转存优化后的变量
+	T_r2c_ = Sophus::SE3( pose->estimate().rotation(),  pose->estimate().translation() );
+	R_ = T_r2c_.rotation_matrix();
+	t_ = T_r2c_.translation();
+	T_.rotate ( Eigen::AngleAxisd(R_) ); 		// 构造Eigen变换关系
 	T_.pretranslate (t_ );
-	cout << "Eigen T:" << endl << T_.matrix() << endl;
-	// 构造Sophus变换关系
-	Sophus::SE3 T_r2c(R_, t_);
-	T_r2c_ = T_r2c;
-	cout << "Sophus T:" << endl << T_r2c_ << endl;
+	cout << "优化后的T_r2c_:" << endl <<  T_r2c_.matrix() << endl;
 	
 	// 计算当前帧到世界坐标的变换
 	/******************************************************************

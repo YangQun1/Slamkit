@@ -2,8 +2,8 @@
 rgb_dir=/home/yangqun/SLAM/DataSet/RGBD_VO_DATA/rgb_png/
 depth_dir=/home/yangqun/SLAM/DataSet/RGBD_VO_DATA/depth_png/
 extension=.png
-start_index=400
-end_index=460
+start_index=1
+end_index=700
 
 # camera
 camera.cx=325.5;
