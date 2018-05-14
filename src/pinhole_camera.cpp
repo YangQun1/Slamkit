@@ -4,6 +4,8 @@
 #include <iostream>
 
 #include <Eigen/Eigen>
+#include <Eigen/Core>
+#include <sophus/se3.h>
 
 #include "pinhole_camera.h"
 #include "param_reader.h"
@@ -28,20 +30,18 @@ PinHoleCamera::~PinHoleCamera()
 	
 }
 
-// 将根据像素点的横纵坐标和深度值恢复其在相机坐标系中的三维坐标
-cv::Point3f PinHoleCamera::point2dTo3d(cv::Point3f& pixel_point_with_depth)
-{
-	int x = pixel_point_with_depth.x;
-	int y = pixel_point_with_depth.y;
-	double d = pixel_point_with_depth.z;
-	
-	cv::Point3f p;
-	p.z = d / factor_;
-	p.x = (x - cx_) * p.z / fx_;
-	p.y = (y - cy_) * p.z / fy_;
-	
-	return p;
-}
-
-
+// // 将根据像素点的横纵坐标和深度值恢复其在相机坐标系中的三维坐标
+// cv::Point3f PinHoleCamera::point2dTo3d(cv::Point3f& pixel_point_with_depth)
+// {
+// 	int x = pixel_point_with_depth.x;
+// 	int y = pixel_point_with_depth.y;
+// 	double d = pixel_point_with_depth.z;
+// 	
+// 	cv::Point3f p;
+// 	p.z = d / factor_;
+// 	p.x = (x - cx_) * p.z / fx_;
+// 	p.y = (y - cy_) * p.z / fy_;
+// 	
+// 	return p;
+// }
 
