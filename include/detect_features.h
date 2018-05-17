@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <boost/shared_ptr.hpp>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/features2d/features2d.hpp>
@@ -21,19 +22,22 @@ using namespace std;
 // TODO:使用栅格,使得提取到的特征点分布更加均匀
 class DetectFeatures 
 {
+public:
+	typedef boost::shared_ptr<DetectFeatures> Ptr;
+	
 private:
 // 	cv::Ptr<cv::FeatureDetector> keypoint_detector_;
 // 	cv::Ptr<cv::DescriptorExtractor> descrip_extractor_;
 	cv::Ptr<cv::Feature2D> feature_detector_;
 	string detector_name_;
-	
+	int feature_num_;
 	bool is_show_;
 	
 public:
-	DetectFeatures(ParameterReader *param_reader);
+	DetectFeatures(ParameterReader::Ptr param_reader);
 	~DetectFeatures();
 	
-	void detectFeaturePoints(FramePtr frame);
+	void detectFeaturePoints(Frame::Ptr frame);
 };
 
 #endif

@@ -19,13 +19,14 @@
 
 using namespace std;
 
-DetectFeatures::DetectFeatures(ParameterReader *param_reader)
+DetectFeatures::DetectFeatures(ParameterReader::Ptr param_reader)
 {
 	detector_name_ = param_reader->getParam<string>("detector_name");
 	is_show_ = param_reader->getParam<bool>("is_show_feature_detection");
+	feature_num_ = param_reader->getParam<int>("feature_num");
 	
 	if (detector_name_ == "ORB") {
-		feature_detector_ = cv::ORB::create(500);
+		feature_detector_ = cv::ORB::create(feature_num_);
 	}
 	else {
 		cout << "invalid detector_name" << endl;
@@ -36,7 +37,7 @@ DetectFeatures::~DetectFeatures()
 {
 }
 
-void DetectFeatures::detectFeaturePoints(FramePtr frame)
+void DetectFeatures::detectFeaturePoints(Frame::Ptr frame)
 {
 	cv::Mat &rgb = frame->rgb_img_;
 	cv::Mat &depth = frame->depth_img_;
