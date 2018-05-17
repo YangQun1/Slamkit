@@ -26,7 +26,10 @@ list (APPEND SOURCEFILES
 		param_reader.cpp
 		frame.cpp
 		image_reader.cpp
-		g2o_types_costom.cpp)
+		g2o_types_costom.cpp
+		map.cpp 
+		map_point.cpp
+		visual_odometry.cpp)
 
 # 生成共享库文件并链接第三方库
 add_library(SlamKit SHARED  ${SOURCEFILES})

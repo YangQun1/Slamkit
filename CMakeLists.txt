@@ -3,8 +3,8 @@ PROJECT( SlamKit ) #设定工程名
 
 SET( CMAKE_CXX_COMPILER "g++") #设定编译器
 set( CMAKE_BUILD_TYPE "Debug" )
-set( CMAKE_CXX_FLAGS "-std=c++11 -O3" )
-# set( CMAKE_CXX_FLAGS "-std=c++11 -O0" )
+# set( CMAKE_CXX_FLAGS "-std=c++11 -O2" )
+set( CMAKE_CXX_FLAGS "-std=c++11 -O1" )
 
 	
 #设定可执行二进制文件的目录
