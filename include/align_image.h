@@ -7,6 +7,7 @@
 
 #include <string>
 #include <vector>
+#include <boost/shared_ptr.hpp>
 
 #include <Eigen/Eigen>
 #include <opencv2/core/core.hpp>
@@ -17,13 +18,17 @@
 #include "pinhole_camera.h"
 #include "detect_features.h"
 #include "param_reader.h"
+#include "map.h"
 
 using namespace std;
 
 class AlignImage 
 {
+public:
+	typedef boost::shared_ptr<AlignImage> Ptr;
+	
 private:
-	PinHoleCamera *cam_;
+	PinHoleCamera::Ptr cam_;
 	
 	vector<cv::DMatch> matches_;
 	vector<cv::DMatch> good_matches_;
@@ -34,11 +39,12 @@ private:
 	double good_match_threshold_;
 	bool is_show_;
 	
-	Eigen::Matrix3d R_;	// 两帧之间的旋转矩阵
-	Eigen::Vector3d t_;		// 两帧之间的平移向量
-	Eigen::Isometry3d T_;	// 两帧之间的变换关系
+// 	Eigen::Matrix3d R_;	// 两帧之间的旋转矩阵
+// 	Eigen::Vector3d t_;		// 两帧之间的平移向量
+// 	Eigen::Isometry3d T_;	// 两帧之间的变换关系
 	
-	Sophus::SE3 T_r2c_;		// ref_frame到curr_frame的变换关系,李群表示
+	Sophus::SE3 T_r2c_;		/* 匹配两帧时,表示ref_frame到curr_frame的变换关系,
+							匹配帧和地图时,表示world到curr_frame的变换关系*/
 	
 	// 与配准质量有关的变量
 	int min_good_matches_;		// 最少优良匹配匹配点数量
@@ -54,11 +60,15 @@ private:
 									cv::Mat& rvec,  
 									cv::Mat& tvec);
 public:
-	AlignImage(PinHoleCamera *cam, ParameterReader *param_reader);
+	AlignImage(PinHoleCamera::Ptr cam, ParameterReader::Ptr param_reader);
 	~AlignImage();
 	
-	void alignImage(FramePtr ref_frame, FramePtr curr_frame);
+	vector<int> match_2dkp_index_;
+	int inliers_num_;
+	
+	void alignTwoFrames(Frame::Ptr ref_frame, Frame::Ptr curr_frame);
 	bool checkAlignQuality(){ return is_good_align_; }
+	void alignMapFrame(Map::Ptr local_map, Frame::Ptr curr_frame, Frame::Ptr ref_frame);
 };
 
 #endif

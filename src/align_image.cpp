@@ -14,6 +14,10 @@
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/imgcodecs.hpp>
+// #include <opencv2/highgui/highgui.hpp>
+// #include <opencv2/viz.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 #include <g2o/core/base_unary_edge.h>
 #include <g2o/types/sba/types_six_dof_expmap.h>
@@ -29,10 +33,12 @@
 #include "align_image.h"
 #include "param_reader.h"
 #include "g2o_types_costom.h"
+#include "map_point.h"
+#include "map.h"
 
 using namespace std;
 
-AlignImage::AlignImage(PinHoleCamera *cam, ParameterReader *param_reader)
+AlignImage::AlignImage(PinHoleCamera::Ptr cam, ParameterReader:: Ptr param_reader)
 {
 	cam_ = cam;
 	matcher_name_ = param_reader->getParam<string>("matcher_name");
@@ -42,11 +48,11 @@ AlignImage::AlignImage(PinHoleCamera *cam, ParameterReader *param_reader)
 	min_inliers_ = param_reader->getParam<int>("min_inliers");
 	max_norm_ = param_reader->getParam<double>("max_norm");
 	
-	T_ = Eigen::Isometry3d::Identity();
+// 	T_ = Eigen::Isometry3d::Identity();
 	
 	// 根据名字动态构建相应的匹配器
 	if (matcher_name_ == "FLANN"){
-		matcher_ = cv::FlannBasedMatcher::create();
+		matcher_ = cv::makePtr<cv::FlannBasedMatcher>(new cv::flann::LshIndexParams ( 5,10,2 ));
 	}
 	else if(matcher_name_ == "BF") {
 		matcher_ = cv::BFMatcher::create();
@@ -62,7 +68,7 @@ AlignImage::~AlignImage()
 
 
 // 求解PnP,求解出两帧图像之间的位姿变换关系
-void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
+void AlignImage:: alignTwoFrames(Frame::Ptr ref_frame, Frame::Ptr curr_frame)
 {
 	is_good_align_ = true;
 	
@@ -171,6 +177,137 @@ void AlignImage:: alignImage(FramePtr ref_frame, FramePtr curr_frame)
 	return;
 }
 
+
+/**
+ * @brief ...
+ * 
+ * @param local_map ...
+ * @param curr_frame ...
+ * @param ref_frame 只用于显示,调试时看图
+ * @return void
+ */
+void AlignImage::alignMapFrame(Map::Ptr local_map, Frame::Ptr curr_frame, Frame::Ptr ref_frame)
+{
+	is_good_align_ = true;
+	
+	// 清空之前的匹配数据,防止数据累积
+	matches_.clear();
+	good_matches_.clear();
+	match_2dkp_index_.clear();
+	
+	// 根据假设的当前帧位姿,对地图点进行投影,筛选可能会出现在当前帧中的地图点作为匹配候选点
+	vector<MapPoint::Ptr> candidate_map_points;
+	cv::Mat map_descriptor;
+	for ( auto point_pair : local_map->map_points_ ) {
+		MapPoint::Ptr& point = point_pair.second;
+		if (curr_frame->isInFrame(point->pose_)) {
+			// 如果地图点可能出现在当前帧中,则将其作为候选
+			candidate_map_points.push_back(point);
+			map_descriptor.push_back(point->descriptor_);
+		}
+	}
+	cout << "candidate_map_points: " << candidate_map_points.size() << endl;
+	
+	// 匹配候选的地图点和当前帧的特征点
+	matcher_->match(map_descriptor, curr_frame->descrip_, matches_);
+	cout << "find total " << matches_.size() << " matches" << endl;
+	
+	// 根据距离,筛选好的匹配
+	// 寻找最小距离
+	double min_dist = 9999;
+	for (cv::DMatch  m : matches_) {
+		if (m.distance < min_dist)
+			min_dist = m.distance;
+	}
+	cout << "min_dist: " << min_dist << endl;
+	
+	// 筛选
+	if (min_dist < 10.0 ) min_dist = 10.0;		// 防止因为min_dist等于0而找不到good_match的情况
+	for (cv::DMatch  m : matches_) {
+		if (m.distance < good_match_threshold_ * min_dist) {
+			good_matches_.push_back(m);
+			match_2dkp_index_.push_back( m.trainIdx );
+		}
+	}
+	cout << "good matches: " << good_matches_.size() << endl;
+	if (good_matches_.size() < min_good_matches_) {
+		is_good_align_ = false;
+		return;
+	}
+	
+	if (is_show_) {
+		cv::Mat img_show = ref_frame->rgb_img_.clone();
+		for ( auto& pt : candidate_map_points ) {
+			Eigen::Vector2d pixel = ref_frame->cam_->world2pixel ( pt->pose_, ref_frame->T_c2w_.inverse() );
+			cv::circle ( img_show, cv::Point2f ( pixel ( 0,0 ),pixel ( 1,0 ) ), 5, cv::Scalar ( 0,255,0 ), 2 );
+		}
+		cv::imshow("candidate", img_show);
+		cv::waitKey(0);
+	}
+	
+	vector<cv::Point3f> points_world;
+	vector<cv::Point2f> points_img;
+	
+	// 获得对应的三维点和像素点坐标
+	for (cv::DMatch m : good_matches_) {
+		// 3D点
+		cv::Point3f pt_world = (candidate_map_points[m.queryIdx])->getPositionCV();
+		points_world.push_back(pt_world);
+		// 得到与之对应的第二帧图像中像素点坐标
+		cv::Point2f pt_img = curr_frame->keypoints_[m.trainIdx].pt;
+		points_img.push_back(pt_img);
+	}
+	
+	// 检查有效的目标点的数量,小于4则会引发opencv异常,需要放弃该帧
+	if (points_world.size() < 4) {
+		is_good_align_ = false;
+		return;
+	}
+	
+	// 求解PnP问题,同时使用RANSAC去除outlier
+	cv::Mat intrisic_matrix = cv::Mat_<double>::ones(3, 3);
+	cv::Mat rvec, tvec, inliers;
+	cv::eigen2cv(cam_->K(), intrisic_matrix);
+	// solvePnPRansac函数输出的是三维点坐标系(模型坐标系)到二维点坐标系(相机坐标系)的变换关系
+	// 在这里,就是世界坐标系中的点左乘得到的变换关系,可以变换到curr_frame坐标系中
+	cv::solvePnPRansac(points_world, points_img, intrisic_matrix, cv::Mat(), rvec, tvec, false, 100, 1.0, 0.99, inliers);
+	cout<<"inliers: "<<inliers.rows<<endl;
+	// cout<<"rvec="<<rvec<<endl;
+	// cout<<"tvec="<<tvec<<endl;
+	inliers_num_ = inliers.rows;
+	if (inliers.rows < min_inliers_){
+		is_good_align_ = false;
+		return;
+	}
+	
+	if (is_show_) {
+		// TODO
+	}
+	
+	optimizePoseOfPnp(points_world, points_img, inliers, rvec, tvec);
+	
+	// 计算当前帧到世界坐标的变换
+	/*
+	 * 因为此时T_r2c_表示的是世界到帧的变换
+	 */
+	curr_frame->T_c2w_ = T_r2c_.inverse();
+	
+	// 根据求得的当前帧的准确位姿,对地图点的相关变量进行更新
+	for ( auto point_pair : local_map->map_points_ ) {
+		MapPoint::Ptr& point = point_pair.second;
+		if (curr_frame->isInFrame(point->pose_)) {
+			point->observed_times_++;
+		}
+	}
+	for (int i = 0; i < inliers.rows; i++) {
+		int index = inliers.at<int>(i,0);	
+		// 符合几何关系的地图点,其被匹配的次数加1
+		candidate_map_points[index]->matched_times_++;
+	}
+	
+	return;
+}
+
 double AlignImage::normOfTransform(cv::Mat rvec, cv::Mat tvec)
 {
 	return fabs(min(cv::norm(rvec), 2*M_PI-cv::norm(rvec)))+ fabs(cv::norm(tvec));
@@ -191,7 +328,7 @@ void AlignImage::optimizePoseOfPnp(vector<cv::Point3f>& points_obj,  vector<cv::
 	Sophus::SE3 T_r2c_no_opt(
 		Sophus::SO3(rvec.at<double>(0,0), rvec.at<double>(1,0), rvec.at<double>(2,0)),
 		Eigen::Vector3d(tvec.at<double>(0,0), tvec.at<double>(1,0), tvec.at<double>(2,0)) );
-	cout << "优化前的T_r2c_:" << endl <<  T_r2c_no_opt.matrix() << endl;
+	// cout << "优化前的T_r2c_:" << endl <<  T_r2c_no_opt.matrix() << endl;
 	
 	// 添加待优化节点
 	g2o::VertexSE3Expmap *pose = new g2o::VertexSE3Expmap;
@@ -216,10 +353,10 @@ void AlignImage::optimizePoseOfPnp(vector<cv::Point3f>& points_obj,  vector<cv::
 	
 	// 转存优化后的变量
 	T_r2c_ = Sophus::SE3( pose->estimate().rotation(),  pose->estimate().translation() );
-	R_ = T_r2c_.rotation_matrix();
-	t_ = T_r2c_.translation();
-	T_.rotate ( Eigen::AngleAxisd(R_) ); 		// 构造Eigen变换关系
-	T_.pretranslate (t_ );
+// 	R_ = T_r2c_.rotation_matrix();
+// 	t_ = T_r2c_.translation();
+// 	T_.rotate ( Eigen::AngleAxisd(R_) ); 		// 构造Eigen变换关系
+// 	T_.pretranslate (t_ );
 	cout << "优化后的T_r2c_:" << endl <<  T_r2c_.matrix() << endl;
 	
 	return;
