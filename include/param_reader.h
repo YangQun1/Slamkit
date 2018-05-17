@@ -15,6 +15,7 @@
 #include <string>
 #include <map>
 #include <sstream>
+#include <boost/shared_ptr.hpp>
 
 using namespace std;
 
@@ -22,6 +23,8 @@ using namespace std;
 class ParameterReader
 {
 public:
+	typedef boost::shared_ptr<ParameterReader> Ptr;
+	
 	ParameterReader( string filename);
 
 	template <class Type> Type getParam( const string& key );

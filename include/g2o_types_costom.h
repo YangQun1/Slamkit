@@ -39,7 +39,7 @@ public:
 	
 	Eigen::Vector3d point_;			// 目标点, 用于计算在当前位姿下的投影误差
 
-	PinHoleCamera * cam_;		// 相机模型,用于计算投影
+	PinHoleCamera::Ptr  cam_;		// 相机模型,用于计算投影
 };
 
 #endif

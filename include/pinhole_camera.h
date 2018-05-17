@@ -4,6 +4,7 @@
 #define PINHOLE_CAMERA_H_
 
 #include <iostream>
+#include <boost/shared_ptr.hpp>
 
 #include <Eigen/Eigen>
 #include <Eigen/Core>
@@ -15,6 +16,9 @@
 
 class PinHoleCamera
 {
+public:
+	typedef boost::shared_ptr<PinHoleCamera> Ptr;
+	
 private:
 	// 相机内参
 	const double fx_, fy_;
@@ -26,7 +30,7 @@ private:
 	Eigen::Matrix3d K_inv_;
 	
 public:
-	PinHoleCamera(ParameterReader *param_reader);
+	PinHoleCamera(ParameterReader::Ptr param_reader);
 	~PinHoleCamera();
 	
 // 	cv::Point3f point2dTo3d(cv::Point3f& pixel_point_with_depth);

@@ -26,7 +26,7 @@
 using namespace std;
 
 
-PointCloudGenerator::PointCloudGenerator(PinHoleCamera* cam, ParameterReader *param_reader)
+PointCloudGenerator::PointCloudGenerator(PinHoleCamera::Ptr cam, ParameterReader::Ptr param_reader)
 // viewer_("viewer")	// 初始化点云显示窗口的名字
 {
 	cam_ = cam;
@@ -56,7 +56,7 @@ PointCloudGenerator::~PointCloudGenerator()
 }
 
 
-PointCloud::Ptr PointCloudGenerator::generatePointCloud(FramePtr frame)
+PointCloud::Ptr PointCloudGenerator::generatePointCloud(Frame::Ptr frame)
 {
     // 点云变量
     // 使用智能指针，创建一个空点云。这种指针用完会自动释放。
@@ -110,7 +110,7 @@ PointCloud::Ptr PointCloudGenerator::generatePointCloud(FramePtr frame)
 	return cloud;
 }
 
-int PointCloudGenerator::joinPointCloud(FramePtr frame)
+int PointCloudGenerator::joinPointCloud(Frame::Ptr frame)
 {
 	// 转换成点云
 	PointCloud::Ptr curr_cloud = generatePointCloud(frame);

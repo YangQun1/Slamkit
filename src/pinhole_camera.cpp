@@ -12,7 +12,7 @@
 
 using namespace std;
 
-PinHoleCamera::PinHoleCamera(ParameterReader *param_reader) :
+PinHoleCamera::PinHoleCamera(ParameterReader::Ptr param_reader) :
 fx_(param_reader->getParam<double>("camera.fx")),
 fy_(param_reader->getParam<double>("camera.fy")),
 cx_ (param_reader->getParam<double>("camera.cx")),

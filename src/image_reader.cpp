@@ -14,7 +14,7 @@
 
 using namespace std;
 
-ImageReader::ImageReader(ParameterReader* param_reader)
+ImageReader::ImageReader(ParameterReader::Ptr param_reader)
 {
 	rgb_dir_ = param_reader->getParam<string>("rgb_dir");
 	depth_dir_ = param_reader->getParam<string>("depth_dir");

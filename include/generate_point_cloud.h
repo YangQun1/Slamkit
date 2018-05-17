@@ -5,6 +5,7 @@
 #define generatePointCloud_H
 
 // C++标准库
+#include <boost/shared_ptr.hpp>
 
 // 第三方库头文件
 #include <Eigen/Eigen>
@@ -27,8 +28,11 @@ typedef pcl::PointCloud<PointT> PointCloud;
 
 class PointCloudGenerator
 {
+public:
+	typedef boost::shared_ptr<PointCloudGenerator> Ptr;
+	
 private:
-	PinHoleCamera *cam_;
+	PinHoleCamera::Ptr cam_;
 	PointCloud::Ptr cloud_out_;
 	pcl::VoxelGrid<PointT> voxel_;
 	pcl::visualization::CloudViewer *viewer_;
@@ -41,12 +45,12 @@ private:
 	bool is_filter_;
 	
 public:
-	PointCloudGenerator(PinHoleCamera *cam, ParameterReader *param_reader);
+	PointCloudGenerator(PinHoleCamera::Ptr cam, ParameterReader::Ptr param_reader);
 	~PointCloudGenerator();
 	
-	PointCloud::Ptr generatePointCloud(FramePtr frame);
+	PointCloud::Ptr generatePointCloud(Frame::Ptr frame);
 	// 将当前帧坐标系下的点云和并到世界坐标系下的点云中去
-	int joinPointCloud(FramePtr frame);
+	int joinPointCloud(Frame::Ptr frame);
 	int savePointCloud();
 	
 };

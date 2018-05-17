@@ -6,6 +6,7 @@
 #define IMAGE_READER_H
 
 #include <string>
+#include <boost/shared_ptr.hpp>
 
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -17,7 +18,9 @@ using namespace std;
 class ImageReader 
 {
 public:
-	ImageReader(ParameterReader *param_reader);
+	typedef boost::shared_ptr<ImageReader> Ptr;
+	
+	ImageReader(ParameterReader::Ptr param_reader);
 	~ImageReader();
 	
 	bool readImage(int index);	// 根据图片的序号读取文件
